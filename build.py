@@ -116,6 +116,17 @@ def main():
         shutil.copytree(nm_src, nm_dst)
         done("node_modules/ 已复制")
 
+    # ---- 生成启动脚本 ----
+    step("生成启动脚本")
+    bat_path = os.path.join(DIST, "启动.bat")
+    with open(bat_path, "w", encoding="gbk") as f:
+        f.write("@echo off\n")
+        f.write("title Minecraft Agent\n")
+        f.write("cd /d \"%~dp0\"\n")
+        f.write("echo 正在启动 Minecraft Agent...\n")
+        f.write("start \"\" \"MinecraftAgent.exe\"\n")
+    done(f"启动.bat 已生成")
+
     # ---- 汇总 ----
     print()
     print("=" * 60)

@@ -11,10 +11,14 @@ import sys
 import os
 import time
 import threading
+import shutil
 import requests
 from collections import deque
+from pathlib import Path
 
 import gradio as gr
+from dotenv import load_dotenv, dotenv_values, set_key
+
 from config import cfg
 
 if getattr(sys, "frozen", False):
@@ -319,11 +323,135 @@ def clear_memory():
 
 
 # ============================================================
+# 首次配置向导
+# ============================================================
+
+def check_environment():
+    """检测运行环境，返回各检查项状态"""
+    checks = {
+        "node": False,
+        "node_modules": False,
+        "api_key": False,
+        "mc_server": False,
+        "dashscope": False,
+    }
+
+    if os.path.exists(NODE_EXE) or shutil.which("node"):
+        checks["node"] = True
+
+    if os.path.exists(os.path.join(ROOT, "node_modules")):
+        checks["node_modules"] = True
+
+    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    if api_key and api_key != "your_api_key_here":
+        checks["api_key"] = True
+
+    try:
+        from config import cfg
+        r = requests.get(f"{cfg.BOT_URL}/status", timeout=3)
+        checks["mc_server"] = r.status_code == 200
+    except:
+        pass
+
+    return checks
+
+
+def format_env_check():
+    """格式化环境检测结果为 Markdown"""
+    checks = check_environment()
+    lines = ["### 环境检测", ""]
+
+    items = [
+        ("node", "Node.js 运行时"),
+        ("node_modules", "Node.js 依赖 (node_modules)"),
+        ("api_key", "DashScope API Key"),
+        ("mc_server", "Minecraft 服务器连接"),
+    ]
+
+    for key, label in items:
+        if checks[key]:
+            lines.append(f"- **已就绪** {label}")
+        else:
+            lines.append(f"- **未配置** {label}")
+
+    # API Key 未配置时给出指引
+    if not checks["api_key"]:
+        lines.append("")
+        lines.append("> DashScope API Key 可从 [dashscope.aliyun.com](https://dashscope.aliyun.com) 免费获取")
+
+    # 判断整体
+    missing = sum(1 for k, _ in items if not checks[k])
+    if missing == 0:
+        lines.insert(1, "所有检查通过，准备就绪。")
+    else:
+        lines.insert(1, f"{missing} 项待处理。")
+
+    return "\n".join(lines)
+
+
+def is_configured():
+    """检查是否已完成基本配置"""
+    api_key = os.getenv("DASHSCOPE_API_KEY", "")
+    return bool(api_key and api_key != "your_api_key_here")
+
+
+def save_config(api_key, mc_port):
+    """保存配置到 .env 文件"""
+    env_path = os.path.join(ROOT, ".env")
+    example_path = os.path.join(ROOT, ".env.example")
+
+    if not os.path.exists(env_path) and os.path.exists(example_path):
+        shutil.copy(example_path, env_path)
+
+    if not os.path.exists(env_path):
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write("")
+
+    if api_key.strip():
+        set_key(env_path, "DASHSCOPE_API_KEY", api_key.strip())
+        os.environ["DASHSCOPE_API_KEY"] = api_key.strip()
+
+    if mc_port.strip():
+        set_key(env_path, "MC_SERVER_PORT", mc_port.strip())
+
+    return f"配置已保存到 {env_path}"
+
+
+def test_api_connection(api_key):
+    """测试 DashScope API Key 是否有效"""
+    if not api_key.strip():
+        return "请先输入 API Key"
+    try:
+        import dashscope
+        dashscope.api_key = api_key.strip()
+        from dashscope import Generation
+        resp = Generation.call(
+            model="qwen-turbo",
+            prompt="hi",
+            result_format="message",
+        )
+        if resp.status_code == 200:
+            return "API Key 有效，连接成功"
+        else:
+            return f"API 返回错误: {resp.code} {resp.message}"
+    except Exception as e:
+        return f"连接失败: {e}"
+
+
+# ============================================================
 # Gradio 界面
 # ============================================================
 
 with gr.Blocks(title="Minecraft Agent 控制台", theme=gr.themes.Soft()) as app:
     gr.Markdown("# Minecraft Agent 控制台")
+
+    # 配置状态横幅
+    config_banner = gr.Markdown(
+        value="",
+        visible=not is_configured()
+    )
+    app.load(fn=lambda: "" if is_configured() else "## 尚未配置 API Key, 请到 **设置** 页完成首次配置，否则 AI 功能不可用",
+             outputs=config_banner)
 
     with gr.Tabs():
         # ============ Tab 1: 控制面板 ============
@@ -449,9 +577,48 @@ with gr.Blocks(title="Minecraft Agent 控制台", theme=gr.themes.Soft()) as app
 
         # ============ Tab 5: 设置 ============
         with gr.TabItem("设置"):
+            gr.Markdown("### 首次配置")
+            gr.Markdown("在开始使用之前，需要配置以下内容。API Key 可从 [dashscope.aliyun.com](https://dashscope.aliyun.com) 免费获取。")
+
+            with gr.Row():
+                api_key_input = gr.Textbox(
+                    label="DashScope API Key",
+                    placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx",
+                    type="password",
+                    value=os.getenv("DASHSCOPE_API_KEY", ""),
+                    scale=3
+                )
+                mc_port_input = gr.Textbox(
+                    label="Minecraft 服务器端口",
+                    value=os.getenv("MC_SERVER_PORT", "25565"),
+                    scale=1
+                )
+
+            with gr.Row():
+                save_config_btn = gr.Button("保存配置", variant="primary")
+                test_api_btn = gr.Button("测试 API 连接", size="sm")
+
+            config_result = gr.Textbox(label="操作结果", interactive=False)
+
+            env_check_md = gr.Markdown(format_env_check())
+            refresh_env_btn = gr.Button("刷新环境检测", size="sm")
+
+            gr.Markdown("---")
             gr.Markdown("### 数据管理")
             clear_mem_btn = gr.Button("清空聊天记忆", variant="stop", size="sm")
             clear_mem_result = gr.Textbox(label="操作结果", interactive=False)
+
+            # 绑定
+            save_config_btn.click(
+                fn=save_config,
+                inputs=[api_key_input, mc_port_input],
+                outputs=config_result
+            ).then(fn=lambda: "" if is_configured() else "## 尚未配置 API Key, 请到 **设置** 页完成首次配置，否则 AI 功能不可用",
+                   outputs=config_banner)
+
+            test_api_btn.click(fn=test_api_connection, inputs=[api_key_input], outputs=config_result)
+
+            refresh_env_btn.click(fn=format_env_check, outputs=env_check_md)
 
             clear_mem_btn.click(fn=clear_memory, outputs=clear_mem_result)\
                 .then(fn=update_chat_history, outputs=chat_display)
