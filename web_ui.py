@@ -17,8 +17,17 @@ from collections import deque
 import gradio as gr
 from config import cfg
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    ROOT = os.path.dirname(sys.executable)
+else:
+    ROOT = os.path.dirname(os.path.abspath(__file__))
+
 CHAT_URL = f"http://{cfg.CHAT_SERVICE_HOST}:{cfg.CHAT_SERVICE_PORT}"
+
+# 便携版 node.exe
+NODE_EXE = os.path.join(ROOT, "node.exe")
+if not os.path.exists(NODE_EXE):
+    NODE_EXE = "node"  # fallback to system node
 
 
 # ============================================================
@@ -54,7 +63,7 @@ class ServiceManager:
             return "机器人已在运行中"
         try:
             self.bot_proc = subprocess.Popen(
-                ["node", "bot_server.js"],
+                [NODE_EXE, "bot_server.js"],
                 cwd=ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -92,8 +101,12 @@ class ServiceManager:
         if self.chat_proc and self.chat_proc.poll() is None:
             return "AI 服务已在运行中"
         try:
+            if getattr(sys, "frozen", False):
+                cmd = [sys.executable, "--run-chat-service"]
+            else:
+                cmd = [sys.executable, "chat_service.py"]
             self.chat_proc = subprocess.Popen(
-                [sys.executable, "chat_service.py"],
+                cmd,
                 cwd=ROOT,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -449,9 +462,20 @@ with gr.Blocks(title="Minecraft Agent 控制台", theme=gr.themes.Soft()) as app
 # ============================================================
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("  Minecraft Agent Web 控制台")
-    print(f"  后端 API: {CHAT_URL}")
-    print(f"  控制台:   http://localhost:7860")
-    print("=" * 50)
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    if len(sys.argv) > 1 and sys.argv[1] == "--run-chat-service":
+        # 子进程模式：运行 AI 聊天服务
+        import uvicorn
+        from chat_service import app as chat_app
+        print("=" * 50)
+        print("  Minecraft AI 聊天服务 (子进程)")
+        print(f"  监听: {cfg.CHAT_SERVICE_HOST}:{cfg.CHAT_SERVICE_PORT}")
+        print("=" * 50)
+        uvicorn.run(chat_app, host=cfg.CHAT_SERVICE_HOST, port=cfg.CHAT_SERVICE_PORT)
+    else:
+        # 主进程模式：运行 Web 控制台
+        print("=" * 50)
+        print("  Minecraft Agent Web 控制台")
+        print(f"  后端 API: {CHAT_URL}")
+        print(f"  控制台:   http://localhost:7860")
+        print("=" * 50)
+        app.launch(server_name="0.0.0.0", server_port=7860)

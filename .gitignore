@@ -36,9 +36,15 @@ ENV/
 
 # Node
 node_modules/
+node.exe
 
 # Claude
 .claude/
+
+# Build
+build/
+dist/
+*.spec
 
 # OS
 .DS_Store
