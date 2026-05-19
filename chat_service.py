@@ -355,6 +355,35 @@ def health():
     }
 
 
+@app.get("/dashboard")
+def dashboard():
+    """聚合仪表盘：bot 状态 + 背包 + 聊天记录"""
+    data = {
+        "bot": {"connected": False},
+        "equipment": None,
+        "recent_chats": [],
+        "memory_count": len(memory.history),
+        "active_tasks": len([t for t in active_tasks.values() if t == "running"])
+    }
+
+    try:
+        bot_status = requests.get(f"{cfg.BOT_URL}/status", timeout=5).json()
+        data["bot"] = bot_status
+    except Exception as e:
+        data["bot"]["error"] = str(e)
+
+    if data["bot"].get("connected"):
+        try:
+            equip = requests.get(f"{cfg.BOT_URL}/equipment", timeout=5).json()
+            data["equipment"] = equip
+        except:
+            pass
+
+    data["recent_chats"] = memory.get_recent_all(10)
+
+    return data
+
+
 if __name__ == "__main__":
     import uvicorn
     print("=" * 50)

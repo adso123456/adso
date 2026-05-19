@@ -8,3 +8,4 @@ python-dotenv>=1.2.0
 dashscope>=1.25.0
 chromadb>=1.5.0
 sentence-transformers>=5.4.0
+gradio>=5.0.0
