@@ -125,20 +125,26 @@ python import_wiki_data.py
 
 ## 启动
 
-需要**按顺序**在两个终端窗口中启动：
-
-### 终端 1：启动 Minecraft 机器人
+### 一键启动（推荐）
 
 ```bash
-node bot_server.js
-# → Minecraft 机器人已连接到 localhost:25565
+python launcher.py
 ```
 
-### 终端 2：启动 AI 聊天服务
+自动启动所有服务并打开浏览器控制台。
+
+### 手动分别启动
 
 ```bash
+# 终端 1: 启动 Minecraft 机器人
+node bot_server.js
+
+# 终端 2: 启动 AI 聊天服务
 python chat_service.py
-# → 聊天服务运行在 http://0.0.0.0:8000
+
+# 终端 3: 启动 Web 控制台
+python web_ui.py
+# → 浏览器打开 http://localhost:7860
 ```
 
 ## 使用
@@ -177,6 +183,8 @@ python chat_service.py
 
 ```
 minecraft-agent/
+├── launcher.py                 # 一键启动器
+├── web_ui.py                   # Gradio Web 可视化控制台
 ├── agent_graph.py              # LangGraph 智能体（核心 AI 大脑）
 ├── chat_service.py             # FastAPI 聊天路由服务
 ├── vector_store.py             # ChromaDB 向量知识库封装
