@@ -71,10 +71,19 @@
 
 ## 环境要求
 
-- **Python** 3.10+
-- **Node.js** 18+
-- **Minecraft Java 版** 1.21.1（需开启局域网/服务器模式）
-- **DashScope API Key**（[阿里云百炼平台](https://dashscope.aliyun.com/) 免费额度）
+| 工具 | 最低版本 | 最高版本 | 说明 |
+|------|----------|----------|------|
+| Python | 3.10 | 3.12 | 3.13+ 部分 ML 包尚未适配 |
+| Node.js | 18 | 22 (LTS) | v24+ npm 包兼容性未知 |
+| npm | 9 | 10 | 随 Node.js 18-22 自带 |
+| Minecraft | 1.21.1 | 1.21.1 | Java 版，需开启局域网/服务器模式 |
+| DashScope API | - | - | [阿里云百炼平台](https://dashscope.aliyun.com/) 免费额度 |
+
+> 如果你安装了 Node.js v24+，建议用 [nvm-windows](https://github.com/coreybutler/nvm-windows) 切换到 22 LTS：
+> ```bash
+> nvm install 22
+> nvm use 22
+> ```
 
 ## 安装
 
