@@ -635,8 +635,12 @@ async function handleIncomingChat(username, message) {
 // 连接 Bot
 app.post('/connect', (req, res) => {
     try {
+        // 如果已经连接且在线，不重复连接
+        if (bot && bot.entity) {
+            return res.json({ status: 'already_connected', username: bot.username });
+        }
+
         const port = req.body.port || 25565;
-        // 手动连接时重置重试计数
         reconnectState.retryCount = 0;
         reconnectState.isReconnecting = false;
         if (reconnectState.reconnectTimer) {
@@ -691,8 +695,8 @@ app.post('/reconnect_stop', (req, res) => {
 
 // 获取状态
 app.get('/status', (req, res) => {
-    if (!bot) {
-        return res.json({ connected: false });
+    if (!bot || !bot.entity) {
+        return res.json({ connected: false, message: 'Bot 未就绪' });
     }
 
     res.json({

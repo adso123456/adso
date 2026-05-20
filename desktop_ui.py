@@ -326,10 +326,34 @@ class DesktopApp:
     def _start_services(self):
         threading.Thread(target=self._do_start_all, daemon=True).start()
 
+    def _wait_for_bot_ready(self, timeout=15):
+        """轮询等待 Bot 服务端口就绪，返回 True/False"""
+        for _ in range(timeout):
+            # 先检查进程是不是已经挂了
+            if svc.bot_proc and svc.bot_proc.poll() is not None:
+                exit_code = svc.bot_proc.returncode
+                self._log(f"[错误] Bot 进程异常退出，退出码: {exit_code}")
+                # 打印最近几条 bot 日志帮助排查
+                recent = list(svc.bot_logs)[-5:]
+                for line in recent:
+                    self._log(f"  {line}")
+                return False
+            try:
+                r = requests.get(f"{cfg.BOT_URL}/status", timeout=2)
+                if r.status_code == 200:
+                    return True
+            except:
+                pass
+            time.sleep(1)
+        return False
+
     def _do_start_all(self):
         self._log("[系统] 正在启动所有服务...")
         svc.start_bot()
-        time.sleep(2)  # 等 bot server 启动
+        if self._wait_for_bot_ready():
+            self._log("[系统] Bot 服务就绪 (port 3001)")
+        else:
+            self._log("[警告] Bot 服务启动超时，请检查日志")
         svc.start_chat()
         # 等待 AI 服务就绪
         for _ in range(15):
@@ -363,7 +387,8 @@ class DesktopApp:
 
     def _start_all(self):
         threading.Thread(target=lambda: (
-            svc.start_bot(), time.sleep(2),
+            svc.start_bot(),
+            self._wait_for_bot_ready(),
             svc.start_chat(),
             time.sleep(1),
             self._connect_bot(),
