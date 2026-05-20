@@ -7,12 +7,14 @@ Minecraft Agent 打包构建脚本
 import subprocess
 import sys
 import os
+import time
 import shutil
 import zipfile
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DIST = os.path.join(ROOT, "dist", "MinecraftAgent")
+DIST_NAME = f"MinecraftAgent_{time.strftime('%Y%m%d_%H%M%S')}"
+DIST = os.path.join(ROOT, "dist", DIST_NAME)
 PYINSTALLER = [sys.executable, "-m", "PyInstaller"]
 
 
@@ -33,12 +35,14 @@ def main():
 
     # ---- 清理旧构建 ----
     step("清理旧构建产物")
-    for d in ["build", "dist"]:
-        path = os.path.join(ROOT, d)
-        if os.path.exists(path):
-            shutil.rmtree(path)
-            print(f"     已删除 {d}/")
-    # 删除 PyInstaller 生成的 spec
+    for exe in ["MinecraftAgent.exe"]:
+        subprocess.run(["taskkill", "/f", "/im", exe],
+                       capture_output=True, timeout=5)
+    # 只清理 build 缓存，dist 用时间戳子目录避免文件锁
+    build_path = os.path.join(ROOT, "build")
+    if os.path.exists(build_path):
+        shutil.rmtree(build_path, ignore_errors=True)
+        print(f"     已删除 build/")
     spec = os.path.join(ROOT, "MinecraftAgent.spec")
     if os.path.exists(spec):
         os.remove(spec)
@@ -49,9 +53,9 @@ def main():
 
     opts = [
         "--onedir",
-        "--name=MinecraftAgent",
+        f"--name={DIST_NAME}",
+        "--icon=app.ico",
         "--noconfirm",
-        "--clean",
         f"--distpath={os.path.join(ROOT, 'dist')}",
         "--hidden-import=langchain_community.chat_models.tongyi",
         "--hidden-import=langchain_chroma",
@@ -67,9 +71,19 @@ def main():
         "--hidden-import=torch",
         "--hidden-import=onnxruntime",
         "--hidden-import=sklearn",
-        "--collect-all=gradio",
+        "--exclude-module=torch.cuda",
+        "--exclude-module=torch.cuda.amp",
+        "--exclude-module=torch.cuda.graphs",
+        "--exclude-module=torch.cuda.nvtx",
+        "--exclude-module=torch.cuda.profiler",
+        "--exclude-module=torch.cuda.streams",
+        "--exclude-module=torch.distributed",
+        "--exclude-module=torch.distributions",
+        "--exclude-module=triton",
+        "--exclude-module=triton.language",
+        "--exclude-module=triton.runtime",
         "--collect-all=sentence_transformers",
-        "web_ui.py",
+        "desktop_ui.py",
     ]
 
     result = subprocess.run(PYINSTALLER + opts, cwd=ROOT)
@@ -88,15 +102,13 @@ def main():
         "chat_service.py",
         "agent_graph.py",
         "vector_store.py",
-        "advanced_synthesis_system.py",
         "config.py",
-        "import_wiki_data.py",
-        "extract_wiki.js",
         "package.json",
         ".env.example",
+        "desktop_ui.py",
         "launcher.py",
         "requirements.txt",
-        "README.md",
+        "使用指南.md",
     ]
 
     for f in copy_files:
@@ -111,10 +123,28 @@ def main():
     nm_dst = os.path.join(DIST, "node_modules")
     if os.path.exists(nm_src):
         if os.path.exists(nm_dst):
-            shutil.rmtree(nm_dst)
+            shutil.rmtree(nm_dst, ignore_errors=True)
         step("复制 node_modules/ (约 546MB，稍等...)")
         shutil.copytree(nm_src, nm_dst)
         done("node_modules/ 已复制")
+
+        # 瘦身：只保留 minecraft-data 1.20.1 / 1.21.1 版本
+        step("裁剪 minecraft-data (只保留 1.20.1 / 1.21.1)")
+        md_dir = os.path.join(nm_dst, "minecraft-data", "minecraft-data", "data")
+        if os.path.exists(md_dir):
+            # 删除 bedrock（Java 版不需要）
+            bedrock_dir = os.path.join(md_dir, "bedrock")
+            if os.path.exists(bedrock_dir):
+                shutil.rmtree(bedrock_dir)
+            # pc 目录只保留 1.21.1
+            pc_dir = os.path.join(md_dir, "pc")
+            if os.path.exists(pc_dir):
+                for ver in os.listdir(pc_dir):
+                    if ver not in ("1.20.1", "1.21.1"):
+                        ver_path = os.path.join(pc_dir, ver)
+                        if os.path.isdir(ver_path):
+                            shutil.rmtree(ver_path)
+            done("minecraft-data 已裁剪 (373MB → ~3MB)")
 
     # ---- 生成启动脚本 ----
     step("生成启动脚本")
@@ -122,10 +152,20 @@ def main():
     with open(bat_path, "w", encoding="gbk") as f:
         f.write("@echo off\n")
         f.write("title Minecraft Agent\n")
-        f.write("cd /d \"%~dp0\"\n")
         f.write("echo 正在启动 Minecraft Agent...\n")
-        f.write("start \"\" \"MinecraftAgent.exe\"\n")
+        f.write(f"start \"\" \"%~dp0{DIST_NAME}.exe\"\n")
     done(f"启动.bat 已生成")
+
+    # ---- 清理旧构建（保留最新 2 个） ----
+    dist_root = os.path.join(ROOT, "dist")
+    builds = sorted(
+        [d for d in os.listdir(dist_root) if d.startswith("MinecraftAgent_")],
+        reverse=True
+    )
+    for old in builds[2:]:  # 删掉第3个及更早的
+        old_path = os.path.join(dist_root, old)
+        print(f"  清理旧构建: {old}")
+        shutil.rmtree(old_path, ignore_errors=True)
 
     # ---- 汇总 ----
     print()
@@ -142,10 +182,15 @@ def main():
             total += os.path.getsize(os.path.join(dirpath, f))
     print(f"  文件夹大小: {total / (1024**3):.1f} GB")
     print()
-    print("  使用方法:")
-    print(f"    1. 进入 {DIST}")
-    print(f"    2. 双击 MinecraftAgent.exe")
-    print(f"    3. 首次运行复制 .env.example 为 .env 并填写 API Key")
+    print("  发布包内容:")
+    print(f"    - {DIST_NAME}.exe     (主程序)")
+    print(f"    - 启动.bat             (一键启动)")
+    print(f"    - 使用指南.md           (用户使用说明)")
+    print(f"    - .env.example         (配置文件模板)")
+    print()
+    print("  用户使用方法:")
+    print(f"    1. 将 {DIST} 文件夹打包发给用户")
+    print(f"    2. 用户参考 使用指南.md 操作即可")
     print()
 
 

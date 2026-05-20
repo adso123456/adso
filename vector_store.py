@@ -11,7 +11,7 @@ class MinecraftVectorStore:
         os.environ["HF_ENDPOINT"] = cfg.HF_ENDPOINT
 
         # 使用配置文件中的 Embedding 模型
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_huggingface import HuggingFaceEmbeddings
         from langchain_chroma import Chroma
 
         self.embeddings = HuggingFaceEmbeddings(

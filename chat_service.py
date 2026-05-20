@@ -113,6 +113,20 @@ class PersistentMemory:
 
 memory = PersistentMemory()
 active_tasks = {}
+_vs_instance = None
+
+
+def _get_vs():
+    """延迟加载向量库单例，避免重复加载 embedding 模型"""
+    global _vs_instance
+    if _vs_instance is None and cfg.ENABLE_VECTOR_STORE:
+        try:
+            from vector_store import MinecraftVectorStore
+            _vs_instance = MinecraftVectorStore()
+        except Exception as e:
+            print(f"⚠ 向量库加载失败: {e}")
+            _vs_instance = False
+    return _vs_instance if _vs_instance is not False else None
 
 
 # ========== 请求模型 ==========
@@ -193,29 +207,28 @@ def execute_command_async(username: str, message: str, task_id: str):
             # 检查是否启用向量知识库
             if cfg.ENABLE_VECTOR_STORE:
                 try:
-                    from vector_store import MinecraftVectorStore
-                    vs = MinecraftVectorStore()
+                    vs = _get_vs()
+                    if vs:
+                        # 保存技能
+                        vs.save_skill(task=message, result=reply)
 
-                    # 保存技能
-                    vs.save_skill(task=message, result=reply)
-
-                    # 如果涉及位置，保存位置记忆
-                    try:
-                        status = requests.get(f"{cfg.BOT_URL}/status", timeout=5).json()
-                        pos = status.get("position", {})
-                        if pos:
-                            vs.save_memory(
-                                f"执行任务-{message[:20]}",
-                                {
-                                    "task": message,
-                                    "result": reply,
-                                    "position": {"x": round(pos.get("x", 0)), "y": round(pos.get("y", 0)),
-                                                 "z": round(pos.get("z", 0))},
-                                    "player": username
-                                }
-                            )
-                    except:
-                        pass
+                        # 如果涉及位置，保存位置记忆
+                        try:
+                            status = requests.get(f"{cfg.BOT_URL}/status", timeout=5).json()
+                            pos = status.get("position", {})
+                            if pos:
+                                vs.save_memory(
+                                    f"执行任务-{message[:20]}",
+                                    {
+                                        "task": message,
+                                        "result": reply,
+                                        "position": {"x": round(pos.get("x", 0)), "y": round(pos.get("y", 0)),
+                                                     "z": round(pos.get("z", 0))},
+                                        "player": username
+                                    }
+                                )
+                        except:
+                            pass
                 except Exception as e:
                     print(f"⚠ 保存到向量库失败: {e}")
 
@@ -243,13 +256,13 @@ async def handle_bot_event(request: BotEventRequest):
     """接收 Bot 上报的游戏事件，保存到向量库"""
     if cfg.ENABLE_VECTOR_STORE:
         try:
-            from vector_store import MinecraftVectorStore
-            vs = MinecraftVectorStore()
-            vs.save_memory(
-                f"游戏事件-{request.event}",
-                request.details
-            )
-            print(f"[事件] {request.event}: {json.dumps(request.details, ensure_ascii=False)[:80]}")
+            vs = _get_vs()
+            if vs:
+                vs.save_memory(
+                    f"游戏事件-{request.event}",
+                    request.details
+                )
+                print(f"[事件] {request.event}: {json.dumps(request.details, ensure_ascii=False)[:80]}")
         except Exception as e:
             print(f"⚠ 保存事件到向量库失败: {e}")
 

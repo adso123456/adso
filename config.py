@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 # 加载环境变量（自动查找 .env 文件）
 load_dotenv()
 
+# 立即设置 HuggingFace 镜像，必须在 import ML 库之前
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+
 
 class Config:
     """应用配置类"""

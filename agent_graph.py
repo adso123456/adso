@@ -10,7 +10,17 @@ import uuid
 from typing import Annotated, Literal
 from dotenv import load_dotenv
 
-sys.stdout.reconfigure(encoding='utf-8')
+# 必须在任何 ML 库之前加载 .env 并设置镜像
+load_dotenv()
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+if os.getenv("DASHSCOPE_API_KEY"):
+    os.environ["DASHSCOPE_API_KEY"] = os.getenv("DASHSCOPE_API_KEY")
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
