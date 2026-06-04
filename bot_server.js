@@ -2,6 +2,7 @@ const mineflayer = require('mineflayer');
 const express = require('express');
 const pathfinder = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
+const { getMovements } = require('./utils.js');
 
 // ========== 自动重连配置 ==========
 const RECONNECT_CONFIG = {
@@ -107,7 +108,7 @@ async function pickupNearbyItems(maxItems = 10) {
                 // 需要走过去捡
                 try {
                     const { goals } = pathfinder;
-                    bot.pathfinder.setMovements(getMovements());
+                    bot.pathfinder.setMovements(getMovements(bot));
 
                     const timeout = new Promise((_, reject) =>
                         setTimeout(() => reject('拾取超时'), 5000)
@@ -169,8 +170,27 @@ const BLOCK_TOOL_MAP = {
     sword: ['cobweb', 'bamboo'],
 };
 
-function getToolTypeForBlock(blockName) {
-    // 根据方块名判断需要哪种工具
+// material → toolType 映射（优先于字符串匹配）
+const MATERIAL_TOOL_MAP = {
+    'mineable/pickaxe': 'pickaxe',
+    'mineable/axe': 'axe',
+    'mineable/shovel': 'shovel',
+    'mineable/hoe': 'hoe',
+    'coweb': 'sword',
+};
+
+function getToolTypeForBlock(block) {
+    // 优先用 block.material 判断（minecraft-data 标准字段）
+    if (block && block.material) {
+        const matParts = block.material.split(';');
+        for (const part of matParts) {
+            const toolType = MATERIAL_TOOL_MAP[part.trim()];
+            if (toolType) return toolType;
+        }
+    }
+
+    // 兜底：字符串匹配（处理 material 取不到或不在映射表中的方块）
+    const blockName = block ? block.name : '';
     for (const [toolType, keywords] of Object.entries(BLOCK_TOOL_MAP)) {
         for (const keyword of keywords) {
             if (blockName.includes(keyword)) {
@@ -213,11 +233,11 @@ function findBestTool(toolType) {
     return bestItem;
 }
 
-async function equipBestToolForBlock(blockName) {
+async function equipBestToolForBlock(block) {
     // 根据方块类型自动装备最佳工具
     if (!bot) return null;
 
-    const toolType = getToolTypeForBlock(blockName);
+    const toolType = getToolTypeForBlock(block);
     if (!toolType) return null; // 不需要工具
 
     const bestTool = findBestTool(toolType);
@@ -520,15 +540,6 @@ function scheduleReconnect(reason) {
         }
     }, delay);
 }
-// 公共寻路配置
-function getMovements() {
-    const { Movements } = pathfinder;
-    const moves = new Movements(bot);
-    moves.canDig = true;
-    moves.allow1by1towers = true;
-    moves.maxDropDown = 4;
-    return moves;
-}
 // 清理周围挡路的竹子和植物
 // ========== 清障系统（带冷却和缓存） ==========
 
@@ -723,11 +734,14 @@ app.post('/goto', async (req, res) => {
         await clearNearbyObstacles(5, true);
 
         const { goals } = pathfinder;
-        bot.pathfinder.setMovements(getMovements());
+        bot.pathfinder.setMovements(getMovements(bot));
 
         // 设置超时，防止卡死
         const timeout = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('寻路超时')), 30000)
+            setTimeout(() => {
+                bot.pathfinder.stop();
+                reject(new Error('寻路超时'));
+            }, 30000)
         );
 
         const navigate = bot.pathfinder.goto(new goals.GoalNear(x, y, z, 2));
@@ -738,7 +752,8 @@ app.post('/goto', async (req, res) => {
         // 寻路失败时，尝试tp（如果有权限）
         console.error('寻路失败:', e.message);
 
-        // 停止当前寻路
+        // 彻底中断寻路，避免残留不一致状态
+        bot.pathfinder.stop();
         bot.pathfinder.setGoal(null);
 
         res.json({
@@ -806,30 +821,118 @@ app.post('/find_block', (req, res) => {
     }
 });
 
+// ========== BFS 完整砍树（共享函数） ==========
+
+async function chopTreeAt(bot, startBlock) {
+    const logName = startBlock.name;
+
+    // --- BFS 搜索所有相邻同种原木 ---
+    const visited = new Set();
+    const queue = [startBlock.position];
+    const posKey = (p) => `${p.x},${p.y},${p.z}`;
+    visited.add(posKey(startBlock.position));
+
+    const dirs = [
+        new Vec3( 1, 0, 0), new Vec3(-1, 0, 0),
+        new Vec3( 0, 1, 0), new Vec3( 0,-1, 0),
+        new Vec3( 0, 0, 1), new Vec3( 0, 0,-1),
+    ];
+
+    while (queue.length > 0 && visited.size < 64) {
+        const pos = queue.shift();
+        for (const d of dirs) {
+            const np = pos.plus(d);
+            const nk = posKey(np);
+            if (visited.has(nk)) continue;
+            const b = bot.blockAt(np);
+            if (b && b.name === logName) {
+                visited.add(nk);
+                queue.push(np);
+            }
+        }
+    }
+
+    const allLogs = [...visited].map(k => {
+        const [x, y, z] = k.split(',').map(Number);
+        return new Vec3(x, y, z);
+    });
+    // 按 y 降序：先砍高处树枝，后砍树干
+    allLogs.sort((a, b) => b.y - a.y || a.distanceTo(startBlock.position) - b.distanceTo(startBlock.position));
+
+    console.log(`[砍树] BFS 找到 ${allLogs.length} 个 ${logName}（上限 64）`);
+
+    // --- 逐个挖掘 ---
+    const { goals } = pathfinder;
+    const totalDeadline = Date.now() + 60000;
+    let blocksChopped = 0;
+    let consecutivePathFails = 0;
+
+    for (const logPos of allLogs) {
+        if (Date.now() > totalDeadline) {
+            console.log('[砍树] 总超时（60s），停止');
+            return { blocksChopped, timedOut: true };
+        }
+
+        const block = bot.blockAt(logPos);
+        if (!block || block.name !== logName) continue; // 已被连带破坏
+        if (!bot.canDigBlock(block)) continue;
+
+        // 寻路到方块附近
+        try {
+            bot.pathfinder.setMovements(getMovements(bot));
+            const pathTimeout = new Promise((_, reject) =>
+                setTimeout(() => {
+                    bot.pathfinder.stop();
+                    reject(new Error('寻路超时'));
+                }, 20000)
+            );
+            await Promise.race([
+                bot.pathfinder.goto(new goals.GoalNear(logPos.x, logPos.y, logPos.z, 2)),
+                pathTimeout
+            ]);
+            consecutivePathFails = 0;
+        } catch (e) {
+            consecutivePathFails++;
+            console.log(`[砍树] 无法到达 (${logPos.x},${logPos.y},${logPos.z}): ${e.message}，连续失败 ${consecutivePathFails}/3`);
+            if (consecutivePathFails >= 3) {
+                console.log('[砍树] 连续 3 次寻路失败，提前结束');
+                bot.pathfinder.stop();
+                bot.pathfinder.setGoal(null);
+                return { blocksChopped, timedOut: false };
+            }
+            continue;
+        }
+
+        // 挖掘
+        try {
+            await equipBestToolForBlock(block);
+            await bot.dig(block);
+            blocksChopped++;
+            await new Promise(r => setTimeout(r, 200));
+        } catch (e) {
+            // 挖不动，跳过
+        }
+    }
+
+    return { blocksChopped, timedOut: false };
+}
+
 // 砍树
 app.post('/chop_tree', async (req, res) => {
     if (!bot) return res.status(400).json({ error: '未连接' });
-    
+
     try {
-        // 先清理周围
         await clearNearbyObstacles(5, true);
 
         const logNames = ['oak_log', 'birch_log', 'spruce_log', 'jungle_log',
                          'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'];
 
         let targetBlock = null;
-
         for (const logName of logNames) {
             const blockId = bot.registry.blocksByName[logName]?.id;
             if (blockId) {
-                const found = bot.findBlock({
-                    matching: blockId,
-                    maxDistance: 32
-                });
-                if (found) {
-                    targetBlock = found;
-                    break;
-                }
+                const found = bot.findBlock({ matching: blockId, maxDistance: 32 });
+                if (found) { targetBlock = found; break; }
             }
         }
 
@@ -837,56 +940,44 @@ app.post('/chop_tree', async (req, res) => {
             return res.json({ status: 'no_tree_found', message: '附近没有找到树' });
         }
 
-        // 寻路到树旁边（带超时）
+        // 寻路到树旁边（带超时 + stop 清理）
         const { goals } = pathfinder;
-        bot.pathfinder.setMovements(getMovements());
+        bot.pathfinder.setMovements(getMovements(bot));
 
         try {
             const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('寻路超时')), 20000)
+                setTimeout(() => {
+                    bot.pathfinder.stop();
+                    reject(new Error('寻路超时'));
+                }, 20000)
             );
-            const navigate = bot.pathfinder.goto(
-                new goals.GoalNear(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2)
-            );
-            await Promise.race([navigate, timeout]);
+            await Promise.race([
+                bot.pathfinder.goto(new goals.GoalNear(
+                    targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2
+                )),
+                timeout
+            ]);
         } catch (e) {
-            // 如果走不到，再清理一次然后重试
+            bot.pathfinder.stop();
+            bot.pathfinder.setGoal(null);
             await clearNearbyObstacles(5, true);
             try {
-                await bot.pathfinder.goto(
-                    new goals.GoalNear(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3)
-                );
+                bot.pathfinder.setMovements(getMovements(bot));
+                await bot.pathfinder.goto(new goals.GoalNear(
+                    targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3
+                ));
             } catch (e2) {
                 return res.json({ status: 'cannot_reach', error: '无法到达树的位置' });
             }
         }
 
-        // 砍树
-        let blocksChopped = 0;
-        for (let y = targetBlock.position.y; y <= targetBlock.position.y + 10; y++) {
-            const block = bot.blockAt(new Vec3(
-                targetBlock.position.x,
-                y,
-                targetBlock.position.z
-            ));
-
-            if (!block || !logNames.includes(block.name)) break;
-
-            try {
-                await equipBestToolForBlock(block.name);
-                await bot.dig(block);
-                blocksChopped++;
-                await new Promise(resolve => setTimeout(resolve, 200));
-            } catch (e) {
-                break;
-            }
-        }
+        // BFS 完整砍树
+        const { blocksChopped, timedOut } = await chopTreeAt(bot, targetBlock);
 
         // 等掉落物落地然后收集
-       await new Promise(r => setTimeout(r, 1500));
-        // 主动捡起来
+        await new Promise(r => setTimeout(r, 1500));
         const picked = await pickupNearbyItems(20);
-        console.log(`[砍树] 砍了 ${blocksChopped} 个原木，捡起 ${picked} 个掉落物`);
+        console.log(`[砍树] 砍了 ${blocksChopped} 个原木，捡起 ${picked} 个掉落物${timedOut ? ' (超时)' : ''}`);
 
         res.json({
             status: 'done',
@@ -896,6 +987,7 @@ app.post('/chop_tree', async (req, res) => {
 
     } catch (e) {
         console.error('砍树错误:', e);
+        bot.pathfinder.stop();
         bot.pathfinder.setGoal(null);
         res.status(500).json({ error: e.message });
     }
@@ -1035,8 +1127,13 @@ app.post('/dig', async (req, res) => {
             return res.json({ error: '该位置没有方块' });
         }
 
+        // 校验方块是否可挖掘（领地保护/基岩等）
+        if (!bot.canDigBlock(block)) {
+            return res.json({ error: `方块不可破坏: ${block.name}` });
+        }
+
         // 自动装备最佳工具
-        const tool = await equipBestToolForBlock(block.name);
+        const tool = await equipBestToolForBlock(block);
 
         const blockName = block.name;
         await bot.dig(block);
@@ -1232,39 +1329,41 @@ app.post('/chop_and_deliver', async (req, res) => {
 
             if (!targetBlock) break;
 
-            // 清理并走过去
+            // 清理并走过去（带超时 + stop 清理）
             await clearNearbyObstacles(5, true);
             const { goals } = pathfinder;
-            bot.pathfinder.setMovements(getMovements());
+            bot.pathfinder.setMovements(getMovements(bot));
 
             try {
-                const timeout = new Promise((_, reject) => setTimeout(() => reject('超时'), 20000));
-                const nav = bot.pathfinder.goto(new goals.GoalNear(
-                    targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2
-                ));
-                await Promise.race([nav, timeout]);
+                const timeout = new Promise((_, reject) =>
+                    setTimeout(() => {
+                        bot.pathfinder.stop();
+                        reject(new Error('寻路超时'));
+                    }, 20000)
+                );
+                await Promise.race([
+                    bot.pathfinder.goto(new goals.GoalNear(
+                        targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2
+                    )),
+                    timeout
+                ]);
             } catch (e) {
+                bot.pathfinder.stop();
+                bot.pathfinder.setGoal(null);
                 await clearNearbyObstacles(5, true);
                 try {
+                    bot.pathfinder.setMovements(getMovements(bot));
                     await bot.pathfinder.goto(new goals.GoalNear(
                         targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3
                     ));
                 } catch (e2) {
-                    continue; // 走不到就跳过这棵树
+                    continue;
                 }
             }
 
-            // 砍树
-            for (let y = targetBlock.position.y; y <= targetBlock.position.y + 10; y++) {
-                const block = bot.blockAt(new Vec3(targetBlock.position.x, y, targetBlock.position.z));
-                if (!block || !logNames.includes(block.name)) break;
-                try {
-                    await equipBestToolForBlock(block.name);
-                    await bot.dig(block);
-                    totalChopped++;
-                    await new Promise(r => setTimeout(r, 200));
-                } catch (e) { break; }
-            }
+            // BFS 完整砍树（复用共享函数）
+            const { blocksChopped } = await chopTreeAt(bot, targetBlock);
+            totalChopped += blocksChopped;
 
             // 等掉落物并拾取
             await new Promise(r => setTimeout(r, 1500));
@@ -1276,7 +1375,7 @@ app.post('/chop_and_deliver', async (req, res) => {
         // 走到玩家身边
         const player = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username);
         if (player) {
-            bot.pathfinder.setMovements(getMovements());
+            bot.pathfinder.setMovements(getMovements(bot));
             try {
                 await clearNearbyObstacles(5, true);
                 const { goals } = pathfinder;
@@ -1305,6 +1404,7 @@ app.post('/chop_and_deliver', async (req, res) => {
 
     } catch (e) {
         console.error('砍树交付错误:', e);
+        bot.pathfinder.stop();
         bot.pathfinder.setGoal(null);
         res.json({ error: e.message });
     }
@@ -1349,7 +1449,7 @@ app.post('/place_block', async (req, res) => {
 
         // 先走到放置位置附近
         const { goals } = pathfinder;
-        bot.pathfinder.setMovements(getMovements());
+        bot.pathfinder.setMovements(getMovements(bot));
         try {
             await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 3));
         } catch (e) {

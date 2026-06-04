@@ -4,6 +4,7 @@
  */
 
 const { Vec3 } = require('vec3');
+const { getMovements } = require('./utils.js');
 
 // 检查是否在坑里（被困在无法正常寻路的地方）
 function isStuckInHole(bot) {
@@ -284,16 +285,6 @@ async function buildPathToTarget(bot, targetPos) {
     return true;
 }
 
-// 获取寻路配置（需要传入bot）
-function getMovements(bot) {
-    const { Movements } = require('mineflayer-pathfinder');
-    const moves = new Movements(bot);
-    moves.canDig = true;
-    moves.allow1by1towers = true;
-    moves.maxDropDown = 4;
-    return moves;
-}
-
 // 增强版走到玩家身边功能
 async function smartGotoPlayer(bot) {
     // 重新获取pathfinder模块，避免可能的作用域问题
@@ -402,33 +393,6 @@ async function smartGotoPlayer(bot) {
     }
 }
 
-// 获取周围区域的地面高度样本
-function getSurroundingGroundLevels(bot, position, radius = 5) {
-    const levels = [];
-    const centerX = Math.floor(position.x);
-    const centerZ = Math.floor(position.z);
-    const centerY = Math.floor(position.y);
-
-    for (let x = centerX - radius; x <= centerX + radius; x++) {
-        for (let z = centerZ - radius; z <= centerZ + radius; z++) {
-            // 只采样接近中心点的区域，避免过于偏离
-            const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(z - centerZ, 2));
-            if (distance <= radius) {
-                // 从当前位置高度开始向下搜索地面
-                for (let y = Math.min(255, centerY + 10); y >= Math.max(0, centerY - 20); y--) {
-                    const block = bot.blockAt(new Vec3(x, y, z));
-                    if (block && block.boundingBox === 'block' && block.name !== 'air') {
-                        levels.push(y + 1); // 固体方块的顶部作为地面
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    return levels;
-}
-
 // 导出智能寻路函数
 module.exports = {
     smartGotoPlayer,
@@ -440,5 +404,4 @@ module.exports = {
     buildBridge,
     getGroundLevel,
     getSurroundingGroundLevels,
-    getMovements
 };
