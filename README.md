@@ -21,7 +21,7 @@
 | Node.js | 18 ~ 22 LTS | 建议用 [nvm-windows](https://github.com/coreybutler/nvm-windows) 管理版本 |
 | Minecraft | 1.20.1 (Java 版) | 需开启局域网/服务器模式 |
 | 启动器 | [HMCL](https://hmcl.huangyuhui.net/download/) | 推荐使用 HMCL 启动器 |
-| DashScope API | - | [阿里云百炼](https://dashscope.aliyun.com/) 免费额度 |
+| DeepSeek API | - | [DeepSeek 平台](https://platform.deepseek.com/) |
 
 ## 快速开始
 
@@ -68,7 +68,7 @@ python launcher.py
 
 | 层 | 技术 |
 |------|------|
-| AI 引擎 | Python · LangGraph · 通义千问 |
+| AI 引擎 | Python · LangGraph · DeepSeek |
 | 知识库 | ChromaDB · HuggingFace Embedding |
 | 聊天路由 | FastAPI · uvicorn |
 | 游戏机器人 | Node.js · Mineflayer · Express |

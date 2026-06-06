@@ -33,7 +33,7 @@ PANEL_URL = f"http://localhost:{cfg.CHAT_SERVICE_PORT}/panel"
 # ============================================================
 # Phase 1: 首次配置引导（轻量 HTTP Server）
 # 注意：不用 chat_service 加路由，因为 chat_service 启动时需要
-#       模块级初始化 ChatTongyi，无 key 会直接报错。
+#       模块级初始化 ChatOpenAI，无 key 会直接报错。
 #       这里用 Python 内置 http.server，零额外依赖。
 # ============================================================
 
@@ -87,10 +87,10 @@ body { font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:#0d111
 <body>
 <div class="card">
   <h1>Minecraft Agent</h1>
-  <div class="sub">首次使用需要配置 DashScope API Key</div>
+  <div class="sub">首次使用需要配置 DeepSeek API Key</div>
 
   <div class="field">
-    <label>DashScope API Key</label>
+    <label>DeepSeek API Key</label>
     <div class="input-row">
       <input type="password" id="apiKey" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off">
       <button class="toggle-btn" id="toggleBtn" onclick="toggleKey()">显示</button>
@@ -113,7 +113,7 @@ body { font-family:"Microsoft YaHei","PingFang SC",sans-serif; background:#0d111
   <div class="result" id="result"></div>
 
   <div class="footer">
-    API Key 可从 <a href="https://dashscope.aliyun.com/" target="_blank">dashscope.aliyun.com</a> 免费获取<br>
+    API Key 可从 <a href="https://platform.deepseek.com/" target="_blank">platform.deepseek.com</a> 获取<br>
     配置将保存到项目根目录的 .env 文件
   </div>
 </div>
@@ -300,18 +300,26 @@ class SetupHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            import dashscope
-            dashscope.api_key = key
-            from dashscope import Generation
-            resp = Generation.call(
-                model="qwen-turbo", prompt="hi", result_format="message")
+            resp = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "deepseek-v4-flash",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 5,
+                },
+                timeout=15,
+            )
             if resp.status_code == 200:
-                self._send_json(200, {"status": "ok", "message": "API Key 有效"})
+                self._send_json(200, {"status": "ok", "message": "DeepSeek API Key 有效"})
+            elif resp.status_code == 401:
+                self._send_json(200, {"status": "error", "message": "API Key 无效 (401)"})
             else:
                 self._send_json(200, {"status": "error",
-                                "message": f"API 错误: {resp.code} {resp.message}"})
-        except ImportError:
-            self._send_json(200, {"status": "error", "message": "dashscope 库未安装"})
+                                "message": f"API 错误: {resp.status_code} {resp.text[:100]}"})
         except Exception as e:
             self._send_json(200, {"status": "error", "message": f"连接失败: {e}"})
 
@@ -340,12 +348,12 @@ class SetupHandler(BaseHTTPRequestHandler):
                 with open(env_path, "w", encoding="utf-8") as f:
                     f.write("")
 
-            set_key(env_path, "DASHSCOPE_API_KEY", key)
+            set_key(env_path, "DEEPSEEK_API_KEY", key)
             if port:
                 set_key(env_path, "MC_SERVER_PORT", port)
 
             # 更新当前进程环境变量，确保后续代码读到新值
-            os.environ["DASHSCOPE_API_KEY"] = key
+            os.environ["DEEPSEEK_API_KEY"] = key
             if port:
                 os.environ["MC_SERVER_PORT"] = port
 
@@ -364,8 +372,8 @@ class SetupHandler(BaseHTTPRequestHandler):
 
 
 def _check_api_key():
-    """检查 .env 中是否有有效的 DASHSCOPE_API_KEY"""
-    key = os.getenv("DASHSCOPE_API_KEY", "")
+    """检查 .env 中是否有有效的 DEEPSEEK_API_KEY"""
+    key = os.getenv("DEEPSEEK_API_KEY", "")
     return bool(key and key != "your_api_key_here")
 
 

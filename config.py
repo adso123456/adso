@@ -34,8 +34,10 @@ class Config:
     # ==========================================
     # 三、模型配置
     # ==========================================
-    LLM_CHAT_MODEL: str = os.getenv("LLM_CHAT_MODEL", "qwen-turbo")
-    LLM_COMMAND_MODEL: str = os.getenv("LLM_COMMAND_MODEL", "qwen-plus")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_BASE_URL: str = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    LLM_CHAT_MODEL: str = os.getenv("LLM_CHAT_MODEL", "deepseek-v4-flash")
+    LLM_COMMAND_MODEL: str = os.getenv("LLM_COMMAND_MODEL", "deepseek-v4-pro")
     EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "shibing624/text2vec-base-chinese")
     EMBEDDING_DEVICE: str = os.getenv("EMBEDDING_DEVICE", "cpu")
 

@@ -16,21 +16,25 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from langchain_community.chat_models.tongyi import ChatTongyi
+# 必须在任何 ML 库 import 之前加载 .env 并设置 HF_ENDPOINT，否则
+# langchain_openai 导入时触发 huggingface_hub 加载，镜像配置会来不及生效
+load_dotenv()
+if os.getenv("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
+
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from agent_graph import graph
 
 from config import cfg
 
-load_dotenv()
-
 app = FastAPI(title="Minecraft Chat Service")
 
 
 # ========== 模型 ==========
 # 闲聊使用轻量模型，指令执行使用 agent_graph 中的模型
-chat_model = ChatTongyi(model=cfg.LLM_CHAT_MODEL)
+chat_model = ChatOpenAI(model=cfg.LLM_CHAT_MODEL, base_url=cfg.DEEPSEEK_BASE_URL, api_key=cfg.DEEPSEEK_API_KEY)
 
 
 # ========== 持久化聊天记忆 ==========

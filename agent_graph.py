@@ -14,15 +14,13 @@ from dotenv import load_dotenv
 load_dotenv()
 if os.getenv("HF_ENDPOINT"):
     os.environ["HF_ENDPOINT"] = os.getenv("HF_ENDPOINT")
-if os.getenv("DASHSCOPE_API_KEY"):
-    os.environ["DASHSCOPE_API_KEY"] = os.getenv("DASHSCOPE_API_KEY")
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
 
-from langchain_community.chat_models.tongyi import ChatTongyi
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain.tools import tool
 from langgraph.graph import StateGraph, MessagesState, START, END
@@ -307,7 +305,7 @@ SYSTEM_PROMPT = """你是一个Minecraft AI玩家助手，名叫AIBot，你在�
 12. 用中文回复用户"""
 
 # 初始化模型并绑定工具
-model = ChatTongyi(model=cfg.LLM_COMMAND_MODEL)
+model = ChatOpenAI(model=cfg.LLM_COMMAND_MODEL, base_url=cfg.DEEPSEEK_BASE_URL, api_key=cfg.DEEPSEEK_API_KEY)
 model_with_tools = model.bind_tools(tools)
 
 # 工具执行节点
