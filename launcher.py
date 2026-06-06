@@ -512,11 +512,16 @@ def main():
     print()
 
     # 阻塞等待退出信号
+    # Windows 上 stop_event.wait() 无超时会阻止信号处理介入,
+    # 改为轮询循环, 每 0.5s 醒一次让 SIGINT 能被及时捕获
     stop_event = threading.Event()
     _register_signals(stop_event)
 
     try:
-        stop_event.wait()
+        while not stop_event.is_set():
+            stop_event.wait(0.5)
+    except KeyboardInterrupt:
+        print("\n[系统] 收到中断信号，正在关闭所有服务...")
     finally:
         svc.shutdown()
         print("[系统] 已退出")

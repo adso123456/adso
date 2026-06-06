@@ -61,11 +61,20 @@ class ServiceManager:
 
     def stop_bot(self):
         if self.bot_proc and self.bot_proc.poll() is None:
-            self.bot_proc.terminate()
-            try:
-                self.bot_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.bot_proc.kill()
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(self.bot_proc.pid)],
+                    capture_output=True)
+                try:
+                    self.bot_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.bot_proc.kill()
+            else:
+                self.bot_proc.terminate()
+                try:
+                    self.bot_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.bot_proc.kill()
             self.bot_logs.append("[系统] Minecraft 机器人已停止")
             return "机器人已停止"
         return "机器人未在运行"
@@ -93,11 +102,20 @@ class ServiceManager:
 
     def stop_chat(self):
         if self.chat_proc and self.chat_proc.poll() is None:
-            self.chat_proc.terminate()
-            try:
-                self.chat_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.chat_proc.kill()
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(self.chat_proc.pid)],
+                    capture_output=True)
+                try:
+                    self.chat_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.chat_proc.kill()
+            else:
+                self.chat_proc.terminate()
+                try:
+                    self.chat_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.chat_proc.kill()
             self.chat_logs.append("[系统] AI 聊天服务已停止")
             return "AI 服务已停止"
         return "AI 服务未在运行"
