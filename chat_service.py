@@ -197,7 +197,7 @@ def execute_command_async(username: str, message: str, task_id: str):
             if len(reply) > 100:
                 reply = reply[:97] + "..."
             try:
-                requests.post(f"{cfg.BOT_URL}/chat", json={"message": f"@{username} {reply}"}, timeout=5)
+                requests.post(f"{cfg.BOT_URL}/chat", json={"message": f"@{username} {reply}"}, timeout=8)
             except Exception as e:
                 print(f"⚠ 发送回复到 Bot 失败: {e}，reply={reply[:40]}")
 
@@ -214,7 +214,7 @@ def execute_command_async(username: str, message: str, task_id: str):
 
                         # 如果涉及位置，保存位置记忆
                         try:
-                            status = requests.get(f"{cfg.BOT_URL}/status", timeout=5).json()
+                            status = requests.get(f"{cfg.BOT_URL}/status", timeout=8).json()
                             pos = status.get("position", {})
                             if pos:
                                 vs.save_memory(
@@ -227,8 +227,8 @@ def execute_command_async(username: str, message: str, task_id: str):
                                         "player": username
                                     }
                                 )
-                        except:
-                            pass
+                        except Exception as e:
+                            print(f"⚠ 保存位置记忆失败(status): {e}")
                 except Exception as e:
                     print(f"⚠ 保存到向量库失败: {e}")
 
@@ -240,7 +240,7 @@ def execute_command_async(username: str, message: str, task_id: str):
         try:
             requests.post(f"{cfg.BOT_URL}/chat", json={
                 "message": f"@{username} 任务失败了，再试一次吧"
-            }, timeout=5)
+            }, timeout=8)
         except Exception as e:
             print(f"⚠ 发送错误通知到 Bot 失败: {e}")
         memory.add(username, message, "执行失败", "command")
@@ -380,14 +380,14 @@ def dashboard():
     }
 
     try:
-        bot_status = requests.get(f"{cfg.BOT_URL}/status", timeout=5).json()
+        bot_status = requests.get(f"{cfg.BOT_URL}/status", timeout=8).json()
         data["bot"] = bot_status
     except Exception as e:
         data["bot"]["error"] = str(e)
 
     if data["bot"].get("connected"):
         try:
-            equip = requests.get(f"{cfg.BOT_URL}/equipment", timeout=5).json()
+            equip = requests.get(f"{cfg.BOT_URL}/equipment", timeout=8).json()
             data["equipment"] = equip
         except Exception as e:
             print(f"⚠ 查询 equipment 失败: {e}")

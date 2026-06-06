@@ -619,34 +619,6 @@ async function clearNearbyObstacles(radius = 3, force = false) {
         console.log(`[清障] 清理了 ${cleared} 个障碍物`);
     }
 }
-// ===== 处理接收到的聊天消息 =====
-
-async function handleIncomingChat(username, message) {
-    try {
-        const response = await fetch('http://localhost:8000/chat_reply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username: username,
-                message: message,
-                bot_name: bot.username
-            })
-        });
-
-        const data = await response.json();
-        
-        if (data.reply && data.reply.trim()) {
-            setTimeout(() => {
-                if (!bot) return;
-                bot.chat(data.reply);
-                console.log(`[自动回复] ${bot.username}: ${data.reply}`);
-            }, 1000 + Math.random() * 2000);
-        }
-    } catch (error) {
-        console.error('自动回复失败:', error);
-    }
-}
-
 // ========== API 路由 ==========
 
 // 连接 Bot
@@ -1055,22 +1027,15 @@ app.post('/equip', async (req, res) => {
 // 收集物品
 app.post('/collect', async (req, res) => {
     if (!bot) return res.status(400).json({ error: '未连接' });
-    
+
     try {
-        const items = bot.findBlocks({
-            matching: block => block.name.includes('item'),
-            maxDistance: 8
-        });
-        
-        if (items.length === 0) {
+        const collected = await pickupNearbyItems(20);
+
+        if (collected === 0) {
             return res.json({ status: 'no_items' });
         }
-        
-        for (const item of items) {
-            await bot.collectBlock.collect(bot.blockAt(item));
-        }
-        
-        res.json({ status: 'done', collected: items.length });
+
+        res.json({ status: 'done', collected });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1404,24 +1369,29 @@ app.post('/chop_and_deliver', async (req, res) => {
         const player = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username);
         if (player) {
             bot.pathfinder.setMovements(getMovements(bot));
+            let reachedPlayer = false;
             try {
                 await clearNearbyObstacles(5, true);
                 const { goals } = pathfinder;
                 await bot.pathfinder.goto(new goals.GoalNear(
                     player.position.x, player.position.y, player.position.z, 2
                 ));
+                reachedPlayer = true;
             } catch (e) {
-                console.log(`[砍树交付] 无法走到玩家身边: ${e.message}，继续丢弃物品`);
+                console.log(`[砍树交付] 无法走到玩家身边: ${e.message}，物品留在背包`);
+                bot.chat(`@${player.username} 砍完了但走不过去，原木先留在背包里`);
             }
 
-            // 丢出所有原木
-            const inventory = bot.inventory.items();
-            for (const item of inventory) {
-                if (logNames.some(name => item.name === name)) {
-                    try {
-                        await bot.tossStack(item);
-                        await new Promise(r => setTimeout(r, 300));
-                    } catch (e) {}
+            if (reachedPlayer) {
+                // 丢出所有原木
+                const inventory = bot.inventory.items();
+                for (const item of inventory) {
+                    if (logNames.some(name => item.name === name)) {
+                        try {
+                            await bot.tossStack(item);
+                            await new Promise(r => setTimeout(r, 300));
+                        } catch (e) {}
+                    }
                 }
             }
         }
@@ -1583,22 +1553,6 @@ app.get('/recent_chats', (req, res) => {
         messages: lastChatMessages.slice(-limit),
         auto_reply_enabled: isAutoReplyEnabled
     });
-});
-
-// 手动触发对某条消息的回复（用于测试）
-app.post('/reply_to_chat', async (req, res) => {
-    const { username, message } = req.body;
-    
-    if (!bot) {
-        return res.status(400).json({ error: '未连接' });
-    }
-    
-    try {
-        await handleIncomingChat(username, message);
-        res.json({ status: 'processing' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
 });
 
 // === 全局错误处理中间件（在所有路由之后） ===

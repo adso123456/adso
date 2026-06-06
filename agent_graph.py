@@ -124,7 +124,7 @@ def collect_items() -> str:
 def goto_player() -> str:
     """走到最近的玩家身边（智能寻路，支持搭桥和爬升）"""
     try:
-        res = requests.post(f"{cfg.BOT_URL}/goto_player", timeout=60)
+        res = requests.post(f"{cfg.BOT_URL}/goto_player", timeout=75)
         result = res.json()
         if result.get("method") == "build_path":
             return f"成功走到玩家身边（通过搭建方块路径）"
@@ -493,8 +493,8 @@ if __name__ == "__main__":
                             }
                         }
                     )
-                except:
-                    pass
+                except Exception as e:
+                    print(f"⚠ 保存位置记忆失败(status): {e}")
 
         except Exception as e:
             error_msg = str(e)
