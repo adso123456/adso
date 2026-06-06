@@ -10,6 +10,8 @@
 - **RAG 知识增强** — 内置 Minecraft Wiki 中文知识库
 - **断线重连** — 指数退避，最多 10 次
 - **自动拾取 & 换工具** — 扫描掉落物，按目标自动切换最佳工具
+- **网页仪表盘** — `http://localhost:8000/panel` 实时查看状态/背包/聊天
+- **首次配置引导** — 首次启动自动打开网页引导填写 API Key
 
 ## 环境要求
 
@@ -33,14 +35,11 @@ source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 npm install
 
-# 3. 配置 API Key
-cp .env.example .env
-# 编辑 .env，填入 DASHSCOPE_API_KEY
-
-# 4. 启动
+# 3. 启动
 python launcher.py
-# 弹出桌面窗口
 ```
+
+首次启动会自动打开浏览器引导填写 API Key，完成后自动跳转到网页仪表盘。
 
 ## 使用
 
@@ -67,14 +66,15 @@ python launcher.py
 ## 项目结构
 
 ```
-├── launcher.py                 # 一键启动
-├── desktop_ui.py               # 桌面控制台 (tkinter)
+├── launcher.py                 # 无界面启动器（含首次配置引导）
+├── service_manager.py          # 进程管理 & 守护
 ├── agent_graph.py              # LangGraph 智能体（核心）
-├── chat_service.py             # FastAPI 聊天路由
+├── chat_service.py             # FastAPI 聊天路由 + 网页仪表盘
 ├── vector_store.py             # ChromaDB 向量库
 ├── config.py                   # 配置管理
 ├── bot_server.js               # Mineflayer + Express API
 ├── smart_pathfinding.js        # 智能寻路
+├── utils.js                    # 工具函数
 ├── .env.example                # 环境变量模板
 └── requirements.txt            # Python 依赖
 ```
