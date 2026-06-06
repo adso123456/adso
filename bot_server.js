@@ -293,6 +293,7 @@ async function equipBestWeapon() {
             console.log(`[装备] 自动切换武器 ${bestWeapon.name}`);
             return bestWeapon;
         } catch (e) {
+            console.error(`[装备] 武器切换失败 (${bestWeapon?.name || '?'}):`, e.message);
             return null;
         }
     }
@@ -1357,6 +1358,7 @@ app.post('/chop_and_deliver', async (req, res) => {
                         targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3
                     ));
                 } catch (e2) {
+                    console.log(`[砍树交付] 某棵树无法到达，跳过: ${e2.message}`);
                     continue;
                 }
             }
@@ -1382,7 +1384,9 @@ app.post('/chop_and_deliver', async (req, res) => {
                 await bot.pathfinder.goto(new goals.GoalNear(
                     player.position.x, player.position.y, player.position.z, 2
                 ));
-            } catch (e) {}
+            } catch (e) {
+                console.log(`[砍树交付] 无法走到玩家身边: ${e.message}，继续丢弃物品`);
+            }
 
             // 丢出所有原木
             const inventory = bot.inventory.items();

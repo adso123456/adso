@@ -198,8 +198,8 @@ def execute_command_async(username: str, message: str, task_id: str):
                 reply = reply[:97] + "..."
             try:
                 requests.post(f"{cfg.BOT_URL}/chat", json={"message": f"@{username} {reply}"}, timeout=5)
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠ 发送回复到 Bot 失败: {e}，reply={reply[:40]}")
 
             memory.add(username, message, reply, "command")
 
@@ -241,8 +241,8 @@ def execute_command_async(username: str, message: str, task_id: str):
             requests.post(f"{cfg.BOT_URL}/chat", json={
                 "message": f"@{username} 任务失败了，再试一次吧"
             }, timeout=5)
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠ 发送错误通知到 Bot 失败: {e}")
         memory.add(username, message, "执行失败", "command")
 
 
@@ -389,8 +389,8 @@ def dashboard():
         try:
             equip = requests.get(f"{cfg.BOT_URL}/equipment", timeout=5).json()
             data["equipment"] = equip
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠ 查询 equipment 失败: {e}")
 
     data["recent_chats"] = memory.get_recent_all(10)
 
