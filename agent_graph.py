@@ -93,7 +93,7 @@ def find_block(name: str, distance: int = 64) -> str:
 def chop_and_deliver(count: int = 1) -> str:
     """砍指定数量的树，收集所有木头，然后走到玩家身边丢给玩家。count是要砍的树的数量"""
     try:
-        res = requests.post(f"{cfg.BOT_URL}/chop_and_deliver", json={"count": count}, timeout=120)
+        res = requests.post(f"{cfg.BOT_URL}/chop_and_deliver", json={"count": count}, timeout=210)
         return str(res.json())
     except requests.exceptions.Timeout:
         return "砍树交付超时，可能树太远了"
@@ -104,7 +104,7 @@ def chop_and_deliver(count: int = 1) -> str:
 def chop_tree() -> str:
     """砍一棵完整的树"""
     try:
-        res = requests.post(f"{cfg.BOT_URL}/chop_tree", timeout=60)
+        res = requests.post(f"{cfg.BOT_URL}/chop_tree", timeout=75)
         return str(res.json())
     except requests.exceptions.Timeout:
         return "砍树超时，可能路径太远或被卡住了"

@@ -56,14 +56,19 @@ function stopAutoPickup() {
 
 // 记录重要游戏事件到 Python 服务
 async function reportEvent(event, details) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
         await fetch('http://localhost:8000/bot_event', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event, details })
+            body: JSON.stringify({ event, details }),
+            signal: controller.signal
         });
     } catch (e) {
         // Python 服务没启动就忽略
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -1317,8 +1322,18 @@ app.post('/chop_and_deliver', async (req, res) => {
                          'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log'];
         let totalChopped = 0;
 
+        const startTime = Date.now();
+        const maxTotalMs = Math.min(count * 50000, 200000);
+        let timedOut = false;
+
         // 砍指定数量的树
         for (let t = 0; t < count; t++) {
+            // 时间预算检查
+            if (Date.now() - startTime > maxTotalMs) {
+                timedOut = true;
+                break;
+            }
+
             let targetBlock = null;
             for (const logName of logNames) {
                 const blockId = bot.registry.blocksByName[logName]?.id;
@@ -1354,10 +1369,21 @@ app.post('/chop_and_deliver', async (req, res) => {
                 await clearNearbyObstacles(5, true);
                 try {
                     bot.pathfinder.setMovements(getMovements(bot));
-                    await bot.pathfinder.goto(new goals.GoalNear(
-                        targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3
-                    ));
+                    const retryTimeout = new Promise((_, reject) =>
+                        setTimeout(() => {
+                            bot.pathfinder.stop();
+                            reject(new Error('寻路重试超时'));
+                        }, 20000)
+                    );
+                    await Promise.race([
+                        bot.pathfinder.goto(new goals.GoalNear(
+                            targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 3
+                        )),
+                        retryTimeout
+                    ]);
                 } catch (e2) {
+                    bot.pathfinder.stop();
+                    bot.pathfinder.setGoal(null);
                     console.log(`[砍树交付] 某棵树无法到达，跳过: ${e2.message}`);
                     continue;
                 }
@@ -1403,7 +1429,8 @@ app.post('/chop_and_deliver', async (req, res) => {
         res.json({
             status: 'done',
             logs_chopped: totalChopped,
-            message: `砍了 ${totalChopped} 个原木并已丢给玩家`
+            message: `砍了 ${totalChopped} 个原木并已丢给玩家`,
+            ...(timedOut ? { timed_out: true } : {})
         });
 
     } catch (e) {
