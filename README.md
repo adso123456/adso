@@ -5,8 +5,8 @@
 ## 功能
 
 - **自然语言指令** — 聊天框输入 `1砍树` 即可触发 AI 自动执行
-- **20+ 工具** — 移动、挖掘、砍树、合成、放置、拾取、交易全自动
-- **智能寻路** — A* 寻路 + 搭桥/搭梯脱困
+- **20+ 工具** — 移动、挖掘、砍树、合成、放置、拾取、采集全自动
+- **智能寻路** — 寻路 + 搭桥/搭梯脱困
 - **RAG 知识增强** — 内置 Minecraft Wiki 中文知识库
 - **断线重连** — 指数退避，最多 10 次
 - **自动拾取 & 换工具** — 扫描掉落物，按目标自动切换最佳工具
@@ -19,27 +19,39 @@
 |------|------|------|
 | Python | 3.10 ~ 3.12 | |
 | Node.js | 18 ~ 22 LTS | 建议用 [nvm-windows](https://github.com/coreybutler/nvm-windows) 管理版本 |
-| Minecraft | 1.20.1 / 1.21.1 (Java 版) | 需开启局域网/服务器模式 |
+| Minecraft | 1.20.1 (Java 版) | 需开启局域网/服务器模式 |
 | 启动器 | [HMCL](https://hmcl.huangyuhui.net/download/) | 推荐使用 HMCL 启动器 |
 | DashScope API | - | [阿里云百炼](https://dashscope.aliyun.com/) 免费额度 |
 
 ## 快速开始
 
-```bash
-# 1. 克隆
+```batch
+:: 1. 克隆
 git clone https://github.com/adso123456/adso.git && cd adso
 
-# 2. 安装依赖
+:: 2. 安装依赖
 python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+venv\Scripts\activate          # Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
 npm install
 
-# 3. 启动
+:: 3. 打开 Minecraft、进入世界、开启局域网联机（默认端口 25565）
+
+:: 4. 启动
 python launcher.py
 ```
 
 首次启动会自动打开浏览器引导填写 API Key，完成后自动跳转到网页仪表盘。
+
+### 端口配置
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| Bot 端口 | `3005` | bot_server.js 监听端口 |
+| Chat 端口 | `8000` | FastAPI + 网页仪表盘 |
+| MC 端口 | `25565` | Minecraft 局域网联机端口 |
+
+复制 `.env.example` 为 `.env` 后修改对应值，或首次启动时在配置页填写。Bot 端口修改后需同步改 `.env` 中的 `BOT_URL`。
 
 ## 使用
 
@@ -61,7 +73,7 @@ python launcher.py
 | 聊天路由 | FastAPI · uvicorn |
 | 游戏机器人 | Node.js · Mineflayer · Express |
 | 寻路 | mineflayer-pathfinder + 自定义脱困 |
-| 游戏版本 | minecraft-data 1.21.1 |
+| 游戏版本 | minecraft-data 1.20.1 |
 
 ## 项目结构
 
