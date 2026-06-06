@@ -351,7 +351,7 @@ class DesktopApp:
         self._log("[系统] 正在启动所有服务...")
         svc.start_bot()
         if self._wait_for_bot_ready():
-            self._log("[系统] Bot 服务就绪 (port 3001)")
+            self._log(f"[系统] Bot 服务就绪 (port {cfg.BOT_URL})")
         else:
             self._log("[警告] Bot 服务启动超时，请检查日志")
         svc.start_chat()

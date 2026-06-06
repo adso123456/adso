@@ -323,7 +323,7 @@ try {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 let bot = null;
 let isAutoReplyEnabled = false;
@@ -1570,8 +1570,40 @@ app.post('/reply_to_chat', async (req, res) => {
     }
 });
 
+// === 全局错误处理中间件（在所有路由之后） ===
+app.use((err, req, res, _next) => {
+    // JSON 解析失败（畸形 body）
+    if (err instanceof SyntaxError && err.type === 'entity.parse.failed') {
+        console.error('[Express] JSON 解析失败:', err.message);
+        return res.status(400).json({ error: err.message });
+    }
+    // 路由中 next(err) 传出的其他错误
+    console.error('[Express] 未捕获异常:', err.stack || err.message);
+    res.status(err.status || 500).json({ error: err.message || '内部服务错误' });
+});
+
 // 启动服务器
-const PORT = 3001;
-app.listen(PORT, () => {
+const PORT = 3005;  // 避开 QQ 的 3001 端口
+const server = app.listen(PORT, () => {
     console.log(`Minecraft Bot API 运行在 http://localhost:${PORT}`);
+});
+
+// server 级致命错误（端口占用等）
+server.on('error', (err) => {
+    console.error(`[${new Date().toISOString()}] [Server] 致命错误:`, err.message);
+    if (err.code === 'EADDRINUSE') {
+        console.error(`[${new Date().toISOString()}] [Server] 端口 ${err.port || PORT} 被占用，退出`);
+        process.exit(1);
+    }
+});
+
+// === 进程级异常兜底 ===
+const now = () => new Date().toISOString();
+
+process.on('unhandledRejection', (reason) => {
+    console.error(`[${now()}] [进程] unhandledRejection:`, reason?.stack || reason?.message || reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error(`[${now()}] [进程] uncaughtException:`, err.stack || err.message);
 });

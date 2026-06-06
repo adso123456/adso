@@ -20,7 +20,7 @@ class Config:
     # ==========================================
     # 一、服务配置
     # ==========================================
-    BOT_URL: str = os.getenv("BOT_URL", "http://localhost:3001")
+    BOT_URL: str = os.getenv("BOT_URL", "http://localhost:3005")
     CHAT_SERVICE_HOST: str = os.getenv("CHAT_SERVICE_HOST", "0.0.0.0")
     CHAT_SERVICE_PORT: int = int(os.getenv("CHAT_SERVICE_PORT", "8000"))
     MC_SERVER_PORT: int = int(os.getenv("MC_SERVER_PORT", "25565"))
