@@ -214,7 +214,23 @@ class MinecraftVectorStore:
 
         print(f"  已导入 {total} 条数据")
 
-    # ====== 技能保存（不变） ======
+    # ====== 技能保存 ======
+
+    def _trim_collection(self, store, max_count: int):
+        """删除最旧记录，保留最新 max_count 条"""
+        data = store.get()
+        if len(data["ids"]) <= max_count:
+            return
+        # 按 timestamp 升序排列，找出需要删除的旧记录
+        entries = []
+        for i, mid in enumerate(data["ids"]):
+            meta = data["metadatas"][i] if data["metadatas"] else {}
+            ts = meta.get("timestamp", "0")
+            entries.append((ts, mid))
+        entries.sort(key=lambda x: x[0])  # 老的在前
+        delete_count = len(entries) - max_count
+        ids_to_delete = [e[1] for e in entries[:delete_count]]
+        store.delete(ids=ids_to_delete)
 
     def save_skill(self, task: str, result: str, steps: list = None):
         from langchain_core.documents import Document
@@ -229,8 +245,9 @@ class MinecraftVectorStore:
             }
         )
         self.skill_store.add_documents([doc])
+        self._trim_collection(self.skill_store, cfg.MAX_SKILLS)
 
-    # ====== 记忆保存（不变） ======
+    # ====== 记忆保存 ======
 
     def save_memory(self, event: str, details: dict):
         from langchain_core.documents import Document
@@ -243,11 +260,19 @@ class MinecraftVectorStore:
             }
         )
         self.memory_store.add_documents([doc])
+        self._trim_collection(self.memory_store, cfg.MAX_MEMORY)
 
     # ====== 检索（不变） ======
 
-    def search_wiki(self, query: str, k: int = 3) -> str:
-        results = self.wiki_store.similarity_search(query, k=k)
+    def search_wiki(self, query: str, k: int = 3, filter_type: str = None) -> str:
+        # type 过滤：内置数据用 category 字段，JSON 数据用 type 字段
+        chroma_filter = None
+        if filter_type:
+            chroma_filter = {"$or": [
+                {"type": filter_type},
+                {"category": filter_type},
+            ]}
+        results = self.wiki_store.similarity_search(query, k=k, filter=chroma_filter)
         if results:
             return "\n".join([doc.page_content for doc in results])
         return "未找到相关知识"

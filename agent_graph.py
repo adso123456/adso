@@ -160,7 +160,7 @@ def craft_item(name: str, count: int = 1) -> str:
 
     # 方案二：自动注入知识库参考
     if HAS_KNOWLEDGE:
-        knowledge = vs.search_wiki(f"合成 {name}")
+        knowledge = vs.search_wiki(f"合成 {name}", filter_type="crafting")
         if "未找到" not in knowledge:
             result += f"【知识库参考】{knowledge}\n\n"
 
@@ -178,7 +178,7 @@ def craft_at_table(name: str, count: int = 1) -> str:
 
     # 方案二：自动注入知识库参考
     if HAS_KNOWLEDGE:
-        knowledge = vs.search_wiki(f"合成 {name}")
+        knowledge = vs.search_wiki(f"合成 {name}", filter_type="crafting")
         if "未找到" not in knowledge:
             result += f"【知识库参考】{knowledge}\n\n"
 

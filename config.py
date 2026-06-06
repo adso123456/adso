@@ -53,6 +53,12 @@ class Config:
     COLLECTION_MEMORY: str = os.getenv("COLLECTION_MEMORY", "game_memory")
 
     # ==========================================
+    # 五-B、向量库存储上限（防止长期膨胀）
+    # ==========================================
+    MAX_SKILLS: int = int(os.getenv("MAX_SKILLS", "500"))
+    MAX_MEMORY: int = int(os.getenv("MAX_MEMORY", "1000"))
+
+    # ==========================================
     # 六、Wiki 数据配置
     # ==========================================
     WIKI_DATA_FILE: str = os.getenv("WIKI_DATA_FILE", "wiki_data.json")
