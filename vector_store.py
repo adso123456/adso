@@ -47,16 +47,28 @@ class MinecraftVectorStore:
     def _get_wiki_version(self) -> str:
         """读取当前知识库版本"""
         if os.path.exists(self.version_file):
-            with open(self.version_file, "r") as f:
-                data = json.load(f)
-                return data.get("version", "")
+            try:
+                with open(self.version_file, "r") as f:
+                    data = json.load(f)
+                    return data.get("version", "")
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"[vector_store] 读取版本文件失败，将视为空: {e}")
         return ""
 
     def _save_wiki_version(self, version: str):
-        """保存知识库版本"""
+        """保存知识库版本，读-改-写避免覆盖其他 key"""
         os.makedirs(os.path.dirname(self.version_file), exist_ok=True)
+        saved = {}
+        if os.path.exists(self.version_file):
+            try:
+                with open(self.version_file, "r") as f:
+                    saved = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"[vector_store] 读取版本文件失败，将覆盖: {e}")
+        saved["version"] = version
+        saved["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         with open(self.version_file, "w") as f:
-            json.dump({"version": version, "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
+            json.dump(saved, f, ensure_ascii=False)
 
     def _calculate_data_hash(self, docs_data) -> str:
         """计算数据的哈希值，用于检测变化"""
@@ -98,18 +110,25 @@ class MinecraftVectorStore:
         current_hash = self._calculate_data_hash(docs_data)
         saved_hash = self._get_wiki_version()
 
+        # 导入外部知识库数据（独立版本检查，不受内置 hash 影响）
+        self.import_json_data()
+
         # 如果哈希一样，说明数据没变，跳过
         if current_hash == saved_hash:
             count = len(self.wiki_store.get()["ids"])
             print(f"Wiki 知识库无变化，共 {count} 条记录")
             return
 
-        # 数据有变化，清空旧数据重新写入
-        print("检测到 Wiki 知识库有更新，正在重新加载...")
-        old_ids = self.wiki_store.get()["ids"]
-        if old_ids:
-            self.wiki_store.delete(ids=old_ids)
-            print(f"  已清除 {len(old_ids)} 条旧记录")
+        # 数据有变化，只清除旧的 built_in 记录，不动外部导入的数据
+        print("检测到内置 Wiki 知识有更新，正在重新加载...")
+        existing = self.wiki_store.get()
+        old_builtin_ids = []
+        for i, meta in enumerate(existing.get("metadatas", [])):
+            if meta and meta.get("source") == "built_in":
+                old_builtin_ids.append(existing["ids"][i])
+        if old_builtin_ids:
+            self.wiki_store.delete(ids=old_builtin_ids)
+            print(f"  已清除 {len(old_builtin_ids)} 条旧内置记录")
 
         docs = [
             Document(page_content=d["text"], metadata={"category": d["cat"], "source": "built_in"})
@@ -117,16 +136,21 @@ class MinecraftVectorStore:
         ]
         self.wiki_store.add_documents(docs)
         self._save_wiki_version(current_hash)
-        print(f"  已加载 {len(docs)} 条新记录")
+        print(f"  已加载 {len(docs)} 条内置知识")
 
     # ====== 导入外部数据（wiki_data.json） ======
 
-    def import_json_data(self, json_path="wiki_data.json", force=False):
+    def import_json_data(self, json_path=None, force=False):
         """从 JSON 文件导入数据，支持增量更新"""
         from langchain_core.documents import Document
 
+        if json_path is None:
+            json_path = cfg.WIKI_DATA_FILE
+        if not os.path.isabs(json_path):
+            json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), json_path)
+
         if not os.path.exists(json_path):
-            print(f"文件不存在: {json_path}")
+            print(f"⚠ 文件不存在: {json_path}")
             return
 
         with open(json_path, "r", encoding="utf-8") as f:
@@ -171,18 +195,24 @@ class MinecraftVectorStore:
                     }
                 ))
 
+        if len(docs) == 0:
+            print(f"⚠ {json_path} 无有效数据可导入")
+            return
+
         # 分批写入
+        total = len(docs)
         batch_size = 50
-        for i in range(0, len(docs), batch_size):
+        for i in range(0, total, batch_size):
             batch = docs[i:i + batch_size]
             self.wiki_store.add_documents(batch)
+            print(f"  导入中 {min(i + batch_size, total)}/{total}")
 
         # 保存版本
         saved_versions[version_key] = file_hash
         with open(self.version_file, "w") as f:
             json.dump(saved_versions, f)
 
-        print(f"  已导入 {len(docs)} 条数据")
+        print(f"  已导入 {total} 条数据")
 
     # ====== 技能保存（不变） ======
 
